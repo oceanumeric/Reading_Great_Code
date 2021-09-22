@@ -1,6 +1,37 @@
 import argparse
 import textwrap
+import os
 import sys
+import inspect
+import logging 
+import appdirs
+from cachelib import FileSystemCache, NullCache
+
+
+if os.getenv('HOWDOI_DISABLE_SSL'):  # Set http instead of https
+    SCHEME = 'http://'
+    VERIFY_SSL_CERTIFICATE = False
+else:
+    SCHEME = 'https://'
+    VERIFY_SSL_CERTIFICATE = True
+    
+SEARCH_URLS = {
+    'bing': SCHEME + 'www.bing.com/search?q=site:{0}%20{1}&hl=en',
+    'google': SCHEME + 'www.google.com/search?q=site:{0}%20{1}&hl=en',
+    'duckduckgo': SCHEME + 'duckduckgo.com/html?q=site:{0}%20{1}&t=hj&ia=web'
+}
+
+URL = os.getenv('HOWDOI_URL') or 'stackoverflow.com'
+
+CACHE_EMPTY_VAL = 'NULL'
+CACHE_DIR = appdirs.user_cache_dir('howdoi')
+CACHE_ENTRY_MAX = 128
+
+if os.getenv('HOWDOI_DISABLE_CACHE'):
+    # works like an always empty cache
+    cache = NullCache()
+else:
+    cache = FileSystemCache(CACHE_DIR, CACHE_ENTRY_MAX, default_timeout=0)
 
 
 class IntRange:
@@ -91,6 +122,50 @@ def get_parser():
     return parser
 
 
+def _get_answers(args, link):
+    """
+    @args: command-line arguments
+    returns: array of answers and their respective metadata
+             False if unable to get answers
+    """
+    questions_links = _get_links_with_cache(args['query'])
+
+    
+def _get_links_with_cache(query):
+    cache_key = _get_cache_key(query)
+    res = _get_from_cache(cache_key)
+    if res:
+        logging.info('Using cached links')
+        if res ==  CACHE_EMPTY_VAL:
+            logging.info('No StackOverflow links found in cached search \
+                engine results - will make live query')
+        else:
+            return res
+    
+    
+def _get_from_cache(cache_key):
+    # as of cachelib 0.3.0, it internally logging a warning on cache miss
+    current_log_level = logging.getLogger().getEffectiveLevel()
+    # reduce the log level so that warning is not printed
+    logging.getLogger().setLevel(logging.ERROR)
+    page = cache.get(cache_key)
+    logging.getLogger().setLevel(current_log_level)
+    return page
+    
+    
+def _get_cache_key(args):
+    frame = inspect.currentframe()
+    calling_func = inspect.getouterframes(frame)[1].function
+    return calling_func + str(args) +  '2.0.18'
+
+def _get_search_url(search_engine):
+    return SEARCH_URLS.get(search_engine, SEARCH_URLS['google'])
+
+def _get_links(query):
+    search_engine = os.getenv('HOWDOI_SEARCH_ENGINE', 'google')
+    search_url = _get_search_url(search_engine).format(URL, )
+
+
 if __name__ == '__main__':
     print(sys.argv[0])
     try: 
@@ -101,3 +176,8 @@ if __name__ == '__main__':
     parser = get_parser()
     args = vars(parser.parse_args())
     print(args)
+    args = vars(parser.parse_args('how do i sd -p 2 -n 9 -x'.split(' ')))
+    print(args)
+    print(os.getenv('HOWDOI_SEARCH_ENGINE', 'google'))
+    gck = _get_cache_key(args)
+    print(gck)
